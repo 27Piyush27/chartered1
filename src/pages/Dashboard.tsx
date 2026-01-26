@@ -13,45 +13,72 @@ import {
   TrendingUp,
   User,
   CreditCard,
+  Loader2,
+  Shield,
+  Briefcase,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ServiceRequest {
   id: string;
-  userId: string;
-  serviceId: string;
-  serviceName: string;
-  status: "pending" | "in-progress" | "completed" | "cancelled";
-  requestDate: string;
+  user_id: string;
+  service_id: string;
+  status: string;
   progress: number;
-  updates?: string[];
+  notes: string | null;
+  created_at: string;
+  services: {
+    name: string;
+  } | null;
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const { user, profile, role, loading: authLoading } = useAuth();
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
 
   useEffect(() => {
-    const currentUser = localStorage.getItem("gmr_current_v5");
-    if (!currentUser) {
+    if (!authLoading && !user) {
       navigate("/auth");
       return;
     }
 
-    const userData = JSON.parse(currentUser);
-    setUser(userData);
+    if (user) {
+      fetchServiceRequests();
+    }
+  }, [user, authLoading, navigate]);
 
-    const allRequests = JSON.parse(localStorage.getItem("gmr_requests_v5") || "[]");
-    const userRequests = allRequests.filter((r: ServiceRequest) => r.userId === userData.email);
-    setRequests(userRequests);
-  }, [navigate]);
+  const fetchServiceRequests = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("service_requests")
+        .select(`
+          id,
+          user_id,
+          service_id,
+          status,
+          progress,
+          notes,
+          created_at,
+          services (name)
+        `)
+        .order("created_at", { ascending: false });
 
-  if (!user) {
+      if (error) throw error;
+      setRequests(data || []);
+    } catch (error) {
+      console.error("Error fetching service requests:", error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-4">Loading...</p>
-        </div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -70,7 +97,7 @@ export default function Dashboard() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, any> = {
+    const variants: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
       completed: "default",
       "in-progress": "secondary",
       pending: "outline",
@@ -82,6 +109,28 @@ export default function Dashboard() {
         {status.replace("-", " ").toUpperCase()}
       </Badge>
     );
+  };
+
+  const getRoleIcon = () => {
+    switch (role) {
+      case "admin":
+        return <Shield className="h-8 w-8" />;
+      case "ca":
+        return <Briefcase className="h-8 w-8" />;
+      default:
+        return <User className="h-8 w-8" />;
+    }
+  };
+
+  const getRoleLabel = () => {
+    switch (role) {
+      case "admin":
+        return "Administrator";
+      case "ca":
+        return "Chartered Accountant";
+      default:
+        return "Client";
+    }
   };
 
   const stats = [
@@ -109,11 +158,14 @@ export default function Dashboard() {
         <div className="container mx-auto px-4">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-white/20 p-3 rounded-full">
-              <User className="h-8 w-8" />
+              {getRoleIcon()}
             </div>
             <div>
-              <h1 className="text-3xl font-bold">Welcome, {user.name}!</h1>
+              <h1 className="text-3xl font-bold">Welcome, {profile?.name || user.email}!</h1>
               <p className="opacity-90">{user.email}</p>
+              <Badge variant="secondary" className="mt-2">
+                {getRoleLabel()}
+              </Badge>
             </div>
           </div>
         </div>
@@ -147,7 +199,11 @@ export default function Dashboard() {
             <CardDescription>Track the progress of your requested services</CardDescription>
           </CardHeader>
           <CardContent>
-            {requests.length === 0 ? (
+            {loadingRequests ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : requests.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground mb-4">You haven't requested any services yet</p>
@@ -162,11 +218,13 @@ export default function Dashboard() {
                         <div className="flex items-start gap-3">
                           {getStatusIcon(request.status)}
                           <div>
-                            <h3 className="font-semibold text-lg">{request.serviceName}</h3>
+                            <h3 className="font-semibold text-lg">
+                              {request.services?.name || request.service_id}
+                            </h3>
                             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                               <Calendar className="h-4 w-4" />
                               Requested on{" "}
-                              {new Date(request.requestDate).toLocaleDateString("en-US", {
+                              {new Date(request.created_at).toLocaleDateString("en-US", {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
@@ -187,12 +245,10 @@ export default function Dashboard() {
                         </div>
                       )}
 
-                      {request.updates && request.updates.length > 0 && (
+                      {request.notes && (
                         <div className="mt-4 p-4 bg-secondary rounded-lg">
-                          <p className="text-sm font-semibold mb-2">Latest Update:</p>
-                          <p className="text-sm text-muted-foreground">
-                            {request.updates[request.updates.length - 1]}
-                          </p>
+                          <p className="text-sm font-semibold mb-2">Notes:</p>
+                          <p className="text-sm text-muted-foreground">{request.notes}</p>
                         </div>
                       )}
                     </CardContent>
