@@ -5,118 +5,139 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { User, Briefcase, Shield } from "lucide-react";
+import { User, Briefcase, Shield, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { z } from "zod";
 
 const roles = [
-  { value: "client", label: "Client", icon: User, description: "Access your financial documents and services" },
-  { value: "ca", label: "Chartered Accountant", icon: Briefcase, description: "Manage clients and provide services" },
-  { value: "admin", label: "Admin", icon: Shield, description: "Full system administration access" },
+  { value: "client" as const, label: "Client", icon: User, description: "Access your financial documents and services" },
+  { value: "ca" as const, label: "Chartered Accountant", icon: Briefcase, description: "Manage clients and provide services" },
+  { value: "admin" as const, label: "Admin", icon: Shield, description: "Full system administration access" },
 ];
+
+const emailSchema = z.string().trim().email({ message: "Invalid email address" }).max(255);
+const passwordSchema = z.string().min(6, { message: "Password must be at least 6 characters" });
+const nameSchema = z.string().trim().min(1, { message: "Name is required" }).max(100);
+
+type AppRole = "admin" | "ca" | "client";
 
 export default function Auth() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, loading: authLoading, signIn, signUp } = useAuth();
   const [activeTab, setActiveTab] = useState(searchParams.get("signup") ? "signup" : "login");
-  const [selectedRole, setSelectedRole] = useState("client");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [loginData, setLoginData] = useState({ email: "", password: "", role: "client" });
+  const [loginData, setLoginData] = useState({ email: "", password: "", role: "client" as AppRole });
   const [signupData, setSignupData] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
-    role: "client",
+    role: "client" as AppRole,
   });
 
   useEffect(() => {
-    const currentUser = localStorage.getItem("gmr_current_v5");
-    if (currentUser) {
+    if (user && !authLoading) {
       navigate("/dashboard");
     }
-  }, [navigate]);
+  }, [user, authLoading, navigate]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    if (!loginData.email || !loginData.password) {
-      toast.error("Please fill in all fields");
-      return;
+    try {
+      emailSchema.parse(loginData.email);
+      passwordSchema.parse(loginData.password);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        setIsSubmitting(false);
+        return;
+      }
     }
 
-    const users = JSON.parse(localStorage.getItem("gmr_users_v5") || "[]");
-    const user = users.find(
-      (u: any) => u.email === loginData.email && u.password === loginData.password && u.role === loginData.role
-    );
+    const { error } = await signIn(loginData.email, loginData.password);
 
-    if (user) {
-      localStorage.setItem("gmr_current_v5", JSON.stringify(user));
-      toast.success(`Welcome back, ${user.name}!`);
-      navigate("/dashboard");
+    if (error) {
+      if (error.message.includes("Invalid login credentials")) {
+        toast.error("Invalid email or password");
+      } else {
+        toast.error(error.message);
+      }
     } else {
-      toast.error("Invalid credentials or role mismatch");
+      toast.success("Welcome back!");
+      navigate("/dashboard");
     }
+
+    setIsSubmitting(false);
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    if (
-      !signupData.name ||
-      !signupData.email ||
-      !signupData.password ||
-      !signupData.confirmPassword
-    ) {
-      toast.error("Please fill in all fields");
-      return;
+    try {
+      nameSchema.parse(signupData.name);
+      emailSchema.parse(signupData.email);
+      passwordSchema.parse(signupData.password);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.errors[0].message);
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     if (signupData.password !== signupData.confirmPassword) {
       toast.error("Passwords do not match");
-      return;
-    }
-
-    if (signupData.password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      setIsSubmitting(false);
       return;
     }
 
     // Admin signup requires special code
     if (signupData.role === "admin") {
       toast.error("Admin accounts can only be created by existing admins");
+      setIsSubmitting(false);
       return;
     }
 
-    const users = JSON.parse(localStorage.getItem("gmr_users_v5") || "[]");
+    const { error } = await signUp(
+      signupData.email,
+      signupData.password,
+      signupData.name,
+      signupData.role
+    );
 
-    if (users.find((u: any) => u.email === signupData.email)) {
-      toast.error("Email already registered");
-      return;
+    if (error) {
+      if (error.message.includes("already registered")) {
+        toast.error("This email is already registered. Please sign in instead.");
+      } else {
+        toast.error(error.message);
+      }
+    } else {
+      toast.success("Account created successfully!");
+      navigate("/dashboard");
     }
 
-    const newUser = {
-      id: Date.now().toString(),
-      name: signupData.name,
-      email: signupData.email,
-      password: signupData.password,
-      role: signupData.role,
-      createdAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    localStorage.setItem("gmr_users_v5", JSON.stringify(users));
-    localStorage.setItem("gmr_current_v5", JSON.stringify(newUser));
-
-    toast.success("Account created successfully!");
-    navigate("/dashboard");
+    setIsSubmitting(false);
   };
 
   const fadeIn = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5 } }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4">
@@ -180,6 +201,7 @@ export default function Auth() {
                       placeholder="your.email@example.com"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -193,11 +215,19 @@ export default function Auth() {
                       placeholder="Enter your password"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
-                  <Button type="submit" className="w-full h-12 text-base font-medium" size="lg">
-                    Sign In as {roles.find(r => r.value === loginData.role)?.label}
+                  <Button type="submit" className="w-full h-12 text-base font-medium" size="lg" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      `Sign In as ${roles.find(r => r.value === loginData.role)?.label}`
+                    )}
                   </Button>
                 </form>
               </TabsContent>
@@ -238,6 +268,7 @@ export default function Auth() {
                       placeholder="John Doe"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -251,6 +282,7 @@ export default function Auth() {
                       placeholder="your.email@example.com"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -264,6 +296,7 @@ export default function Auth() {
                       placeholder="At least 6 characters"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
@@ -279,11 +312,19 @@ export default function Auth() {
                       placeholder="Re-enter your password"
                       className="h-12 bg-secondary/50 border-border/50 focus:border-primary"
                       required
+                      disabled={isSubmitting}
                     />
                   </div>
 
-                  <Button type="submit" className="w-full h-12 text-base font-medium" size="lg">
-                    Create {signupData.role === "ca" ? "CA" : "Client"} Account
+                  <Button type="submit" className="w-full h-12 text-base font-medium" size="lg" disabled={isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating account...
+                      </>
+                    ) : (
+                      `Create ${signupData.role === "ca" ? "CA" : "Client"} Account`
+                    )}
                   </Button>
                 </form>
               </TabsContent>

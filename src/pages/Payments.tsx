@@ -17,7 +17,11 @@ import {
   ArrowLeft,
   Shield,
   Zap,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PaymentPlan {
   id: string;
@@ -28,12 +32,14 @@ interface PaymentPlan {
   popular?: boolean;
 }
 
-interface PaymentHistory {
+interface Payment {
   id: string;
   amount: number;
-  status: "success" | "pending" | "failed";
-  date: string;
-  description: string;
+  currency: string;
+  status: string;
+  description: string | null;
+  razorpay_payment_id: string | null;
+  created_at: string;
 }
 
 const paymentPlans: PaymentPlan[] = [
@@ -87,89 +93,146 @@ declare global {
 
 export default function Payments() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const { user, profile, session, loading: authLoading } = useAuth();
   const [customAmount, setCustomAmount] = useState("");
-  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+  const [razorpayLoaded, setRazorpayLoaded] = useState(false);
 
   useEffect(() => {
-    const currentUser = localStorage.getItem("gmr_current_v5");
-    if (!currentUser) {
+    if (!authLoading && !user) {
       navigate("/auth");
       return;
     }
-    setUser(JSON.parse(currentUser));
-
-    // Load payment history
-    const history = JSON.parse(localStorage.getItem("gmr_payments_v5") || "[]");
-    setPaymentHistory(history.filter((p: PaymentHistory) => p.id));
 
     // Load Razorpay script
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
+    script.onload = () => setRazorpayLoaded(true);
     document.body.appendChild(script);
 
+    if (user) {
+      fetchPayments();
+    }
+
     return () => {
-      document.body.removeChild(script);
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
     };
-  }, [navigate]);
+  }, [user, authLoading, navigate]);
+
+  const fetchPayments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("payments")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setPayments(data || []);
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+    } finally {
+      setLoadingPayments(false);
+    }
+  };
 
   const handlePayment = async (amount: number, description: string) => {
-    if (!window.Razorpay) {
+    if (!razorpayLoaded) {
       toast.error("Payment gateway is loading. Please try again.");
+      return;
+    }
+
+    if (!session?.access_token) {
+      toast.error("Please log in to make a payment");
+      navigate("/auth");
       return;
     }
 
     setIsLoading(true);
 
-    // In production, you would create an order on your backend
-    // For demo, we'll use test mode
-    const options = {
-      key: "rzp_test_demo", // Replace with your Razorpay key
-      amount: amount * 100, // Razorpay expects amount in paise
-      currency: "INR",
-      name: "GMR & Associates",
-      description: description,
-      image: "/logo.png",
-      handler: function (response: any) {
-        // Payment successful
-        const payment: PaymentHistory = {
-          id: response.razorpay_payment_id || Date.now().toString(),
-          amount: amount,
-          status: "success",
-          date: new Date().toISOString(),
-          description: description,
-        };
-
-        const history = JSON.parse(localStorage.getItem("gmr_payments_v5") || "[]");
-        history.unshift(payment);
-        localStorage.setItem("gmr_payments_v5", JSON.stringify(history));
-        setPaymentHistory([payment, ...paymentHistory]);
-
-        toast.success("Payment successful! Thank you for your purchase.");
-        setIsLoading(false);
-      },
-      prefill: {
-        name: user?.name || "",
-        email: user?.email || "",
-      },
-      theme: {
-        color: "#000000",
-      },
-      modal: {
-        ondismiss: function () {
-          setIsLoading(false);
-          toast.info("Payment cancelled");
-        },
-      },
-    };
-
     try {
+      // Create order via edge function
+      const { data, error } = await supabase.functions.invoke("create-razorpay-order", {
+        body: { amount, description },
+      });
+
+      if (error) {
+        console.error("Edge function error:", error);
+        toast.error("Failed to create payment order");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!data?.order_id || !data?.key_id) {
+        toast.error("Invalid response from payment server");
+        setIsLoading(false);
+        return;
+      }
+
+      // Initialize Razorpay
+      const options = {
+        key: data.key_id,
+        amount: data.amount,
+        currency: data.currency,
+        name: "GMR & Associates",
+        description: description,
+        order_id: data.order_id,
+        handler: async function (response: any) {
+          // Verify payment
+          try {
+            const { data: verifyData, error: verifyError } = await supabase.functions.invoke(
+              "verify-razorpay-payment",
+              {
+                body: {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  payment_id: data.payment_id,
+                },
+              }
+            );
+
+            if (verifyError || !verifyData?.success) {
+              toast.error("Payment verification failed");
+              return;
+            }
+
+            toast.success("Payment successful! Thank you for your purchase.");
+            fetchPayments();
+          } catch (err) {
+            console.error("Verification error:", err);
+            toast.error("Payment verification failed");
+          }
+        },
+        prefill: {
+          name: profile?.name || "",
+          email: user?.email || "",
+        },
+        theme: {
+          color: "#0f172a",
+        },
+        modal: {
+          ondismiss: function () {
+            setIsLoading(false);
+            toast.info("Payment cancelled");
+          },
+        },
+      };
+
       const razorpay = new window.Razorpay(options);
+      razorpay.on("payment.failed", function (response: any) {
+        toast.error(`Payment failed: ${response.error.description}`);
+        setIsLoading(false);
+      });
       razorpay.open();
     } catch (error) {
+      console.error("Payment error:", error);
       toast.error("Failed to initialize payment. Please try again.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -181,6 +244,20 @@ export default function Payments() {
       return;
     }
     handlePayment(amount, "Custom Payment");
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case "pending":
+      case "processing":
+        return <Clock className="w-5 h-5 text-yellow-500" />;
+      case "failed":
+        return <AlertCircle className="w-5 h-5 text-red-500" />;
+      default:
+        return <Clock className="w-5 h-5 text-muted-foreground" />;
+    }
   };
 
   const fadeIn = {
@@ -196,10 +273,10 @@ export default function Payments() {
     },
   };
 
-  if (!user) {
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -262,7 +339,7 @@ export default function Payments() {
           variants={stagger}
           className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12"
         >
-          {paymentPlans.map((plan, index) => (
+          {paymentPlans.map((plan) => (
             <motion.div key={plan.id} variants={fadeIn}>
               <Card
                 className={`relative h-full transition-all duration-300 hover:shadow-xl ${
@@ -292,11 +369,15 @@ export default function Payments() {
                   </ul>
                   <Button
                     onClick={() => handlePayment(plan.price, plan.name)}
-                    disabled={isLoading}
+                    disabled={isLoading || !razorpayLoaded}
                     className="w-full"
                     variant={plan.popular ? "default" : "outline"}
                   >
-                    <IndianRupee className="w-4 h-4 mr-1" />
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <IndianRupee className="w-4 h-4 mr-1" />
+                    )}
                     Pay ₹{plan.price.toLocaleString()}
                   </Button>
                 </CardContent>
@@ -338,8 +419,8 @@ export default function Payments() {
                       min="1"
                     />
                   </div>
-                  <Button onClick={handleCustomPayment} disabled={isLoading}>
-                    Pay Now
+                  <Button onClick={handleCustomPayment} disabled={isLoading || !razorpayLoaded}>
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Pay Now"}
                   </Button>
                 </div>
               </div>
@@ -363,26 +444,26 @@ export default function Payments() {
               <CardDescription>Your recent transactions</CardDescription>
             </CardHeader>
             <CardContent>
-              {paymentHistory.length === 0 ? (
+              {loadingPayments ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : payments.length === 0 ? (
                 <div className="text-center py-8">
                   <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground">No payment history yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {paymentHistory.map((payment, index) => (
+                  {payments.map((payment, index) => (
                     <div key={payment.id}>
                       <div className="flex items-center justify-between py-3">
                         <div className="flex items-center gap-3">
-                          {payment.status === "success" ? (
-                            <CheckCircle className="w-5 h-5 text-green-500" />
-                          ) : (
-                            <Clock className="w-5 h-5 text-yellow-500" />
-                          )}
+                          {getStatusIcon(payment.status)}
                           <div>
-                            <p className="font-medium">{payment.description}</p>
+                            <p className="font-medium">{payment.description || "Payment"}</p>
                             <p className="text-sm text-muted-foreground">
-                              {new Date(payment.date).toLocaleDateString("en-IN", {
+                              {new Date(payment.created_at).toLocaleDateString("en-IN", {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
@@ -393,14 +474,14 @@ export default function Payments() {
                         <div className="text-right">
                           <p className="font-semibold">₹{payment.amount.toLocaleString()}</p>
                           <Badge
-                            variant={payment.status === "success" ? "default" : "secondary"}
+                            variant={payment.status === "completed" ? "default" : payment.status === "failed" ? "destructive" : "secondary"}
                             className="text-xs"
                           >
                             {payment.status.toUpperCase()}
                           </Badge>
                         </div>
                       </div>
-                      {index < paymentHistory.length - 1 && <Separator />}
+                      {index < payments.length - 1 && <Separator />}
                     </div>
                   ))}
                 </div>

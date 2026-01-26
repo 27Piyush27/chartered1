@@ -2,13 +2,13 @@ import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Navigation = () => {
   const location = useLocation();
   const [isDark, setIsDark] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState("");
+  const { user, profile, signOut, loading } = useAuth();
 
   useEffect(() => {
     const darkMode = localStorage.getItem("darkMode") === "true";
@@ -16,17 +16,7 @@ export const Navigation = () => {
     if (darkMode) {
       document.documentElement.classList.add("dark");
     }
-
-    const currentUser = localStorage.getItem("gmr_current_v5");
-    if (currentUser) {
-      const user = JSON.parse(currentUser);
-      setIsLoggedIn(true);
-      setUsername(user.name || user.email);
-    } else {
-      setIsLoggedIn(false);
-      setUsername("");
-    }
-  }, [location.pathname]);
+  }, []);
 
   const toggleTheme = () => {
     const newDark = !isDark;
@@ -35,10 +25,8 @@ export const Navigation = () => {
     document.documentElement.classList.toggle("dark");
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("gmr_current_v5");
-    setIsLoggedIn(false);
-    setUsername("");
+  const handleLogout = async () => {
+    await signOut();
     window.location.href = "/";
   };
 
@@ -49,6 +37,8 @@ export const Navigation = () => {
     { name: "Contact", path: "/contact" },
     { name: "Dashboard", path: "/dashboard" },
   ];
+
+  const displayName = profile?.name || user?.email?.split("@")[0] || "";
 
   return (
     <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border/50">
@@ -88,14 +78,14 @@ export const Navigation = () => {
               {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
             
-            {isLoggedIn ? (
+            {!loading && user ? (
               <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">{username}</span>
+                <span className="text-sm text-muted-foreground">{displayName}</span>
                 <Button onClick={handleLogout} variant="outline" size="sm">
                   Sign Out
                 </Button>
               </div>
-            ) : (
+            ) : !loading ? (
               <div className="flex items-center gap-3">
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/auth">Login</Link>
@@ -104,7 +94,7 @@ export const Navigation = () => {
                   <Link to="/auth?signup=true">Get Started</Link>
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Mobile Menu Button */}
@@ -147,11 +137,11 @@ export const Navigation = () => {
               </button>
             </div>
             
-            {isLoggedIn ? (
+            {!loading && user ? (
               <Button onClick={handleLogout} variant="outline" className="w-full">
                 Sign Out
               </Button>
-            ) : (
+            ) : !loading ? (
               <div className="flex flex-col gap-2">
                 <Button asChild variant="outline" className="w-full">
                   <Link to="/auth">Login</Link>
@@ -160,7 +150,7 @@ export const Navigation = () => {
                   <Link to="/auth?signup=true">Get Started</Link>
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}
