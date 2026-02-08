@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Moon, Sun, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export const Navigation = () => {
   const location = useLocation();
@@ -80,6 +81,7 @@ export const Navigation = () => {
             
             {!loading && user ? (
               <div className="flex items-center gap-4">
+                <NotificationBell />
                 <span className="text-sm text-muted-foreground">{displayName}</span>
                 <Button onClick={handleLogout} variant="outline" size="sm">
                   Sign Out
