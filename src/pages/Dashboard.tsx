@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useServiceNotifications } from "@/hooks/useServiceNotifications";
 
 interface ServiceRequest {
   id: string;
@@ -39,18 +40,7 @@ export default function Dashboard() {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate("/auth");
-      return;
-    }
-
-    if (user) {
-      fetchServiceRequests();
-    }
-  }, [user, authLoading, navigate]);
-
-  const fetchServiceRequests = async () => {
+  const fetchServiceRequests = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("service_requests")
@@ -73,7 +63,21 @@ export default function Dashboard() {
     } finally {
       setLoadingRequests(false);
     }
-  };
+  }, []);
+
+  // Subscribe to realtime notifications & auto-refresh on changes
+  useServiceNotifications(fetchServiceRequests);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/auth");
+      return;
+    }
+
+    if (user) {
+      fetchServiceRequests();
+    }
+  }, [user, authLoading, navigate, fetchServiceRequests]);
 
   if (authLoading || !user) {
     return (
