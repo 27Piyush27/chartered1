@@ -28,6 +28,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { ServiceStatusStepper } from "@/components/ServiceStatusStepper";
+import { CADocumentReview } from "@/components/CADocumentReview";
 
 interface ServiceRequest {
   id: string;
@@ -453,6 +454,16 @@ export default function AdminDashboard() {
                                   rows={3}
                                 />
                               </div>
+
+                              <Separator />
+
+                              {/* Client Documents Review */}
+                              {selectedRequest && (
+                                <CADocumentReview
+                                  serviceRequestId={selectedRequest.id}
+                                  clientName={selectedRequest.profiles?.name}
+                                />
+                              )}
 
                               <Separator />
 
