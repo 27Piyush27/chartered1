@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useServiceNotifications } from "@/hooks/useServiceNotifications";
 import { ServiceStatusStepper } from "@/components/ServiceStatusStepper";
 import { ServicePaymentButton } from "@/components/ServicePaymentButton";
+import { ClientDocumentUpload } from "@/components/ClientDocumentUpload";
 
 interface ServiceRequest {
   id: string;
@@ -319,6 +320,14 @@ export default function Dashboard() {
                           </Button>
                         </div>
                       )}
+
+                      {/* Client Document Upload */}
+                      <div className="mb-4 p-4 rounded-lg border border-border/50 bg-secondary/20">
+                        <ClientDocumentUpload
+                          serviceRequestId={request.id}
+                          status={request.status}
+                        />
+                      </div>
 
                       {/* Conditional Payment Button */}
                       <ServicePaymentButton
