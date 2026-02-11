@@ -7,6 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
+import { PageTransition } from "@/components/PageTransition";
+import { ScrollReveal, StaggerContainer, StaggerItem } from "@/components/ScrollReveal";
 import { 
   Calculator, 
   FileCheck, 
@@ -35,18 +37,7 @@ const iconMap: Record<string, React.ReactNode> = {
   ClipboardCheck: <ClipboardCheck className="h-6 w-6" />,
 };
 
-const fadeIn = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-};
-
-const stagger = {
-  visible: {
-    transition: {
-      staggerChildren: 0.08,
-    },
-  },
-};
+// Removed old animation variants - using ScrollReveal components instead
 
 export default function Services() {
   const navigate = useNavigate();
@@ -102,6 +93,7 @@ export default function Services() {
   };
 
   return (
+    <PageTransition>
     <div className="min-h-screen">
       {/* Hero Section */}
       <section className="py-20 md:py-28 px-6 lg:px-12 text-center border-b border-border/50">
@@ -149,19 +141,18 @@ export default function Services() {
       {/* Services Grid */}
       <section className="py-16 md:py-24">
         <div className="container mx-auto px-6 lg:px-12">
-          <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={stagger}
+          <StaggerContainer
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto"
+            staggerDelay={0.08}
           >
             {servicesData.map((service) => (
-              <motion.div
+              <StaggerItem
                 key={service.id}
-                variants={fadeIn}
                 className="group relative"
               >
-                <div className="h-full bg-background border border-border/50 rounded-2xl p-6 md:p-8 transition-all duration-300 hover:shadow-soft hover:border-border flex flex-col">
+                <div className="h-full bg-background border border-border/50 rounded-2xl p-6 md:p-8 transition-all duration-500 hover:shadow-medium hover:border-border hover:-translate-y-1 flex flex-col relative overflow-hidden">
+                  {/* Hover gradient overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl pointer-events-none" />
                   {/* Popular Badge */}
                   {service.popular && (
                     <div className="absolute -top-3 right-6">
@@ -245,21 +236,17 @@ export default function Services() {
                     )}
                   </Button>
                 </div>
-              </motion.div>
+              </StaggerItem>
             ))}
-          </motion.div>
+          </StaggerContainer>
         </div>
       </section>
 
       {/* CTA Section */}
-      <section className="py-20 md:py-28 bg-foreground text-background">
-        <div className="container mx-auto px-6 lg:px-12 text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
+      <section className="py-20 md:py-28 bg-foreground text-background relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-accent/10 to-transparent pointer-events-none" />
+        <div className="container mx-auto px-6 lg:px-12 text-center relative">
+          <ScrollReveal>
             <p className="text-sm tracking-widest text-background/60 uppercase mb-4">
               Need a Custom Solution?
             </p>
@@ -270,15 +257,18 @@ export default function Services() {
               Every business is unique. Contact us to discuss how we can customize 
               our services to meet your specific requirements.
             </p>
-            <Button asChild size="lg" variant="secondary">
-              <Link to="/contact">
-                Get in Touch
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Link>
-            </Button>
-          </motion.div>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button asChild size="lg" variant="secondary">
+                <Link to="/contact">
+                  Get in Touch
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Link>
+              </Button>
+            </motion.div>
+          </ScrollReveal>
         </div>
       </section>
     </div>
+    </PageTransition>
   );
 }
