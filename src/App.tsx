@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { AuthProvider } from "./contexts/AuthContext";
 import { Navigation } from "./components/Navigation";
+import { AIChatbot } from "./components/AIChatbot";
 import { Footer } from "./components/Footer";
 import Home from "./pages/Home";
 import About from "./pages/About";
@@ -49,6 +50,7 @@ const App = () => (
           <Navigation />
           <AnimatedRoutes />
           <Footer />
+          <AIChatbot />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
