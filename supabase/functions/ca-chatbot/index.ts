@@ -54,8 +54,10 @@ serve(async (req) => {
 
   try {
     const { messages, conversationId } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const AI_GATEWAY_API_KEY = Deno.env.get("AI_GATEWAY_API_KEY");
+    const AI_GATEWAY_URL = Deno.env.get("AI_GATEWAY_URL");
+    if (!AI_GATEWAY_API_KEY) throw new Error("AI_GATEWAY_API_KEY is not configured");
+    if (!AI_GATEWAY_URL) throw new Error("AI_GATEWAY_URL is not configured");
 
     // Optionally save messages if user is authenticated
     const authHeader = req.headers.get("authorization");
@@ -78,11 +80,11 @@ serve(async (req) => {
     }
 
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      AI_GATEWAY_URL,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${AI_GATEWAY_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
