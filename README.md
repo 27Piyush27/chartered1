@@ -42,6 +42,10 @@ npm run dev
 - Click on "New codespace" to launch a new Codespace environment.
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
+## Package manager
+
+This repository uses **npm** and `package-lock.json` as the source of truth for dependencies.
+
 ## What technologies are used for this project?
 
 This project is built with:
